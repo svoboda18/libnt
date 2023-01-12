@@ -292,16 +292,16 @@ static BOOL PreventSetUnhandledExceptionFilter(void) {
 
 #ifndef SVB_DEBUG
 static void __NT_DCL nt_late_exit(void) {
-	fclose(__trace);
+    fclose(__trace);
 }
 #endif
 
 __NT_CON void __NT_DCL nt_early_init(void) {
     int fmode;
 #ifndef SVB_DEBUG
-	snprintf(__dname, PATH_MAX - 1, "%s\\debug_nt", getenv("TEMP") ?: ".");
-	unlink(__dname);
-	atexit(&nt_late_exit);
+    snprintf(__dname, PATH_MAX - 1, "%s\\debug_nt", getenv("TEMP") ?: ".");
+    unlink(__dname);
+    atexit(&nt_late_exit);
     NT_DEBUG("Configured debug file: %s", __dname);
 #endif
 
@@ -313,14 +313,14 @@ __NT_CON void __NT_DCL nt_early_init(void) {
     _get_fmode(&fmode);
     NT_DEBUG("I/O mode: %s", fmode == O_BINARY ? "BINARY" : "TEXT");
 #define BINARY_MODE(FILE) \
-	{ \
-		if(_setmode( _fileno(FILE), O_BINARY) != -1) \
-			NT_DEBUG("Set BINARY I/O: %s" #FILE); \
-	}
+    { \
+        if(_setmode( _fileno(FILE), O_BINARY) != -1) \
+            NT_DEBUG("Set BINARY I/O: %s" #FILE); \
+    }
 
-	BINARY_MODE(stdin)
-	BINARY_MODE(stdout)
-	BINARY_MODE(stderr)
+    BINARY_MODE(stdin)
+    BINARY_MODE(stdout)
+    BINARY_MODE(stderr)
 #undef BINARY_MODE
     // Disable any Windows pop-up on crash or file access error
     NT_DEBUG("Disable Windows crash pop-up");
@@ -707,20 +707,20 @@ int __NT_DCL symlink(const char *target, const char *file) {
 	const ssize_t len = sz * sizeof(wchar_t) + SYMLINK_COOKIE_LEN + 2;
     char *wbuf = malloc(len);
 
-	assert(wbuf);
+    assert(wbuf);
     assert(target);
     assert(file);
 
-	const char *data = wbuf;
-	strncpy(wbuf, SYMLINK_COOKIE, SYMLINK_COOKIE_LEN);
-	wbuf += SYMLINK_COOKIE_LEN;
-	*(PWCHAR) wbuf = 0xfeff;
-	wbuf += 2;
+    const char *data = wbuf;
+    strncpy(wbuf, SYMLINK_COOKIE, SYMLINK_COOKIE_LEN);
+    wbuf += SYMLINK_COOKIE_LEN;
+    *(PWCHAR) wbuf = 0xfeff;
+    wbuf += 2;
 
     int fd = _open(file, O_RDWR | O_CREAT | O_BINARY, S_IREAD | S_IWRITE);
     if (fd == -1) {
-		return -1;
-	}
+        return -1;
+    }
 
     if (MultiByteToWideChar(CP_UTF8, 0, target, sz, (LPWSTR)wbuf, sz) != sz) {
         errno = EINVAL;
