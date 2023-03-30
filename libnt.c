@@ -521,42 +521,72 @@ FILE *__NT_DCL fdopen2(int fd, const char *mode) {
     return orig_fdopen(fd, p_mode.mode);
 }
 
+#define FILE_IO_BUF_SIZE 65536 /* 64kb */
 ssize_t __NT_DCL sendfile(int out_fd, int in_fd, off_t *offset, size_t count) {
     ssize_t bytes = 0;
+    off_t orig_pos;
 
-    assert(out_fd > -1 && in_fd > -1);
+    if (out_fd < 0 || in_fd < 0) {
+        errno = EBADF;
+        return -1;
+    }
+ 
+    if (count < 0) {
+        errno = EINVAL;
+        return -1;
+    } else if (count == 0) {
+        return 0;
+    }
 
     if (offset) {
+        orig_pos = lseek(in_fd, 0, SEEK_CUR);
+        NT_DEBUG("original file pos %lld", orig_pos);
+        if (orig_pos == (off_t)-1) {
+            return -1;
+	}
         off_t pos = lseek(in_fd, *offset, SEEK_SET);
         NT_DEBUG("changed pos to %lld", pos);
-        if (pos == (off_t)-1 || pos != *offset)
+        if (pos == (off_t)-1) {
             return -1;
+	}
     }
 
     while (count) {
-        char buf[count];
-        NT_DEBUG("need %llu", count);
-        ssize_t rd = read(in_fd, buf, count);
+        char buf[FILE_IO_BUF_SIZE];
+        NT_DEBUG("left %llu", count);
+        NT_DEBUG("need %llu", FILE_IO_BUF_SIZE);
+        ssize_t rd = read(in_fd, buf, FILE_IO_BUF_SIZE);
         NT_DEBUG("read %lld", rd);
-        if (rd < 0) {
+        // since we have already treated zero count case, mark it as error at this stage
+        if (rd <= 0) {
             bytes = -1;
             break;
         }
         ssize_t we = write(out_fd, buf, rd);
         NT_DEBUG("write %lld", we);
-        if (we < 0 || rd != we) {
+        if (we <= 0 || rd != we) {
             bytes = -1;
             break;
         }
         bytes += we;
         if (offset)
             *offset += rd;
-        if ((size_t)rd < count) // short read
-            break;
         count -= rd;
+        if ((size_t)rd < FILE_IO_BUF_SIZE) // short read
+            break;
     }
-    if (offset)
-        NT_DEBUG("offset %lld", *offset);
+    
+    if (offset) {
+       assert(lseek(in_fd, orig_pos, SEEK_SET) == orig_pos);
+       NT_DEBUG("restore file pos %lld", orig_pos);
+    }
+
+    // here count should be 0 else we have failed
+    if (count) {
+	errno = EIO;
+	return -1;
+    }
+
     NT_DEBUG("bytes %lld", bytes);
     return bytes;
 }
@@ -608,8 +638,8 @@ static int fix_stat(const char *pathname,
 
     buf->st_dev = (dev_t)fi.dwVolumeSerialNumber;
     buf->st_ino = fi.nFileIndexHigh;
-	buf->st_ino <<= 32;
-	buf->st_ino |= fi.nFileIndexLow;
+    buf->st_ino <<= 32;
+    buf->st_ino |= fi.nFileIndexLow;
 
     return 0;
 }
@@ -704,7 +734,7 @@ err:
 
 int __NT_DCL symlink(const char *target, const char *file) {
     int sz = strlen(target) + 1;
-	const ssize_t len = sz * sizeof(wchar_t) + SYMLINK_COOKIE_LEN + 2;
+    const ssize_t len = sz * sizeof(wchar_t) + SYMLINK_COOKIE_LEN + 2;
     char *wbuf = malloc(len);
 
     assert(wbuf);

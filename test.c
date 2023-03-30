@@ -19,6 +19,9 @@
 #define TEST_FILE_GETLINE "getline"
 #define TEST_FILE_SYMLINK "symlink"
 #define TEST_FILE_LSTAT "statfile"
+#define TEST_FILE_SENDFILE_SIZE (1 << 26)
+#define TEST_FILE_SENDFILE_IN "sendfilein"
+#define TEST_FILE_SENDFILE_OUT "sendfileout"
 
 #define WRITE_TO_TEST_FILE_IMPL(FILE, SIZE, BUF) { \
         unlink(FILE); \
@@ -85,19 +88,19 @@ int test_file_map_write(void) {
 }
 
 #define CHECK_TOKEN(TOKEN) \
-	{ \
-		ret = getdelim(&buf, &bufsiz, ' ', fp); \
-		if (ret == -1) { \
-			printf("getdelim failed : %d\n", errno); \
-			return ret; \
-		} \
-		len = strlen(TOKEN); \
-		printf("%s:getdelim: \"%.*s\" (sz: %d)", __func__, ret, buf, len); \
-		ret = strncmp(buf, TOKEN, len); \
-		if (ret) \
-			cmp = -1; \
-		printf(" == %s\n", cmp ? "fail" : "pass"); \
-	}
+    { \
+        ret = getdelim(&buf, &bufsiz, ' ', fp); \
+        if (ret == -1) { \
+            printf("getdelim failed : %d\n", errno); \
+            return ret; \
+        } \
+        len = strlen(TOKEN); \
+        printf("%s:getdelim: \"%.*s\" (sz: %d)", __func__, ret, buf, len); \
+        ret = strncmp(buf, TOKEN, len); \
+        if (ret) \
+            cmp = -1; \
+        printf(" == %s\n", cmp ? "fail" : "pass"); \
+    }
 int file_getdlim(const char *filename)
 {
     char *buf;
@@ -105,9 +108,9 @@ int file_getdlim(const char *filename)
     FILE *fp = fopen(filename, "rb");
     int cmp = 0, len, ret;
     
-	CHECK_TOKEN(GETDLIM_TOKEN1)
-	CHECK_TOKEN(GETDLIM_TOKEN2)
-	CHECK_TOKEN(GETDLIM_TOKEN3)
+    CHECK_TOKEN(GETDLIM_TOKEN1)
+    CHECK_TOKEN(GETDLIM_TOKEN2)
+    CHECK_TOKEN(GETDLIM_TOKEN3)
 
     fclose(fp);
     return cmp;
@@ -119,33 +122,63 @@ int test_file_getdlim(void) {
 
 int test_file_symlink(void) {
     int ret = symlink("/etc/fstab", TEST_FILE_SYMLINK);
-	if (ret == -1) {
-		printf("symlink failed : %s\n", strerror(errno));
-		return ret;
-	}
-	char path[255];
-	int sz = readlink(TEST_FILE_SYMLINK, path, 254);
-	if (sz == -1) {
-		printf("readlink failed: %s\n", strerror(errno));
-		return sz;
-	}
-	struct stat st;
-	ret = lstat(TEST_FILE_SYMLINK, &st);
-	if (ret == -1) {
-		printf("lstat failed : %d\n", errno);
-		return ret;
-	}
-	path[sz] = 0;
-	printf("readlink: %s (sz: %d is_lnk: %d stsz: %lld)", path, sz, S_ISLNK(st.st_mode), st.st_size);
-	printf(" == %s\n", (!S_ISLNK(st.st_mode) || st.st_size != sz) ? "fail" : "pass");
-	return 0;
+    if (ret == -1) {
+        printf("symlink failed : %s\n", strerror(errno));
+        return ret;
+    }
+    char path[255];
+    int sz = readlink(TEST_FILE_SYMLINK, path, 254);
+    if (sz == -1) {
+        printf("readlink failed: %s\n", strerror(errno));
+        return sz;
+    }
+    struct stat st;
+    ret = lstat(TEST_FILE_SYMLINK, &st);
+    if (ret == -1) {
+        printf("lstat failed : %d\n", errno);
+        return ret;
+    }
+    path[sz] = 0;
+    printf("readlink: %s (sz: %d is_lnk: %d stsz: %lld)", path, sz, S_ISLNK(st.st_mode), st.st_size);
+    printf(" == %s\n", (!S_ISLNK(st.st_mode) || st.st_size != sz) ? "fail" : "pass");
+    return 0;
+}
+
+int test_file_sendfile(void) {
+    int in_fd, out_fd;
+    
+    FILE *fp = fopen(TEST_FILE_SENDFILE_IN, "w+");
+    if (fp) {
+        // provoke a short read
+        fseek(fp, TEST_FILE_SENDFILE_SIZE - 2, SEEK_SET);
+        fwrite("", 1, sizeof(char), fp);
+        fclose(fp);
+    } else {
+        printf("fopen failed : %d\n", errno);
+        return -1;
+    }
+    
+    in_fd = open(TEST_FILE_SENDFILE_IN, O_RDONLY);
+    out_fd = open(TEST_FILE_SENDFILE_OUT, O_TRUNC | O_CREAT | O_WRONLY);
+
+    int ret = sendfile(out_fd, in_fd, NULL, TEST_FILE_SENDFILE_SIZE - 1);
+
+    if (ret < 0) {
+        printf("sendfile failed: %s\n", strerror(errno));
+        return 1;
+    }
+
+    close(in_fd);
+    close(out_fd);
+
+    return 0;
 }
 
 #define EXEC_TEST(name) \
     if (name() != 0) { result = -1; printf( #name ": fail\n"); } \
     else { printf(#name ": pass\n"); }
 
-int main()
+int main(void)
 {
     int result = 0;
     
@@ -154,7 +187,8 @@ int main()
     EXEC_TEST(test_file_map_read);
     EXEC_TEST(test_file_map_write);
     EXEC_TEST(test_file_getdlim);
-	EXEC_TEST(test_file_symlink);
+    EXEC_TEST(test_file_symlink);
+    EXEC_TEST(test_file_sendfile);
 
     return result;
 }
